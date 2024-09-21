@@ -141,8 +141,9 @@ public class KnnGraphTester {
   private float selectivity;
   private boolean prefilter;
   private boolean randomCommits;
-  private boolean parentJoin = false;
-  private Path parentJoinMetaFile;
+//  private boolean parentJoin = false;
+  private KnnBenchmarkType benchmarkType;
+  private Path metadataFile;
 
   private KnnGraphTester() {
     // set defaults
@@ -161,6 +162,7 @@ public class KnnGraphTester {
     randomCommits = false;
     quantizeBits = 7;
     quantizeCompress = false;
+    benchmarkType = KnnBenchmarkType.DEFAULT;
   }
 
   public static void main(String... args) throws Exception {
@@ -348,10 +350,17 @@ public class KnnGraphTester {
           break;
         case "-parentJoin":
           if (iarg == args.length - 1) {
-            throw new IllegalArgumentException("-parentJoin requires a following Path for parentJoinMetaFile");
+            throw new IllegalArgumentException("-parentJoin requires a following Path for metadataFile");
           }
-          parentJoinMetaFile = Paths.get(args[++iarg]);
-          parentJoin = true;
+          metadataFile = Paths.get(args[++iarg]);
+          benchmarkType = KnnBenchmarkType.PARENT_JOIN;
+          break;
+        case "-multiVector":
+          if (iarg == args.length - 1) {
+            throw new IllegalArgumentException("-multiVector requires a following Path for metadataFile");
+          }
+          metadataFile = Paths.get(args[++iarg]);
+          benchmarkType = KnnBenchmarkType.PARENT_JOIN;
           break;
         default:
           throw new IllegalArgumentException("unknown argument " + arg);
@@ -368,9 +377,15 @@ public class KnnGraphTester {
       indexPath = Paths.get(formatIndexPath(docVectorsPath)); // derive index path
       log("Index Path = %s", indexPath);
     }
-    if (parentJoin && reindex == false && isParentJoinIndex(indexPath) == false) {
+    if (benchmarkType == KnnBenchmarkType.PARENT_JOIN &&
+      reindex == false && isParentJoinIndex(indexPath) == false) {
       throw new IllegalArgumentException("Provided index: [" + indexPath + "] does not have parent-child " +
           "document relationships. Rerun with -reindex or without -parentJoin argument");
+    }
+    if (benchmarkType == KnnBenchmarkType.MULTI_VECTOR &&
+      reindex == false && isMultiVectorIndex(indexPath) == false) {
+      throw new IllegalArgumentException("Provided index: [" + indexPath + "] does not have multi-vector " +
+        "documents. Rerun with -reindex or without -multiVector argument");
     }
     if (reindex) {
       if (docVectorsPath == null) {
@@ -386,8 +401,8 @@ public class KnnGraphTester {
         numDocs,
         0,
         quiet,
-        parentJoin,
-        parentJoinMetaFile
+        benchmarkType,
+        metadataFile
       ).createIndex();
       System.out.println(String.format("reindex takes %.2f sec", msToSec(reindexTimeMsec)));
     }
@@ -441,14 +456,16 @@ public class KnnGraphTester {
         suffix.add("-compressed");
       }
     }
-    if (parentJoin) {
-      suffix.add("parentJoin");
-    }
+    suffix.add(benchmarkType.indexTag);
     return INDEX_DIR + "/" + docsPath.getFileName() + "-" + String.join("-", suffix) + ".index";
   }
 
   private boolean isParentJoinIndex(Path indexPath) {
-    return indexPath.toString().contains("parentJoin");
+    return indexPath.toString().contains(KnnBenchmarkType.PARENT_JOIN.indexTag);
+  }
+
+  private boolean isMultiVectorIndex(Path indexPath) {
+    return indexPath.toString().contains(KnnBenchmarkType.MULTI_VECTOR.indexTag);
   }
 
   @SuppressForbidden(reason = "Prints stuff")
