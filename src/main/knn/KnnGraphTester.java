@@ -745,15 +745,19 @@ public class KnnGraphTester {
   }
 
   private static TopDocs doKnnVectorQuery(
-      IndexSearcher searcher, String field, float[] vector, int k, int fanout, Query filter, boolean isParentJoinQuery)
+      IndexSearcher searcher, String field, float[] vector, int k, int fanout, Query filter, KnnBenchmarkType benchmarkType)
       throws IOException {
-    if (isParentJoinQuery) {
-      ParentJoinBenchmarkQuery parentJoinQuery = new ParentJoinBenchmarkQuery(vector, null, k);
-      return searcher.search(parentJoinQuery, k);
+    switch (benchmarkType) {
+      case PARENT_JOIN -> {
+        ParentJoinBenchmarkQuery parentJoinQuery = new ParentJoinBenchmarkQuery(vector, null, k);
+        return searcher.search(parentJoinQuery, k);
+      }
+      default -> {
+        ProfiledKnnFloatVectorQuery profiledQuery = new ProfiledKnnFloatVectorQuery(field, vector, k, fanout, filter);
+        TopDocs docs = searcher.search(profiledQuery, k);
+        return new TopDocs(new TotalHits(profiledQuery.totalVectorCount(), docs.totalHits.relation()), docs.scoreDocs);
+      }
     }
-    ProfiledKnnFloatVectorQuery profiledQuery = new ProfiledKnnFloatVectorQuery(field, vector, k, fanout, filter);
-    TopDocs docs = searcher.search(profiledQuery, k);
-    return new TopDocs(new TotalHits(profiledQuery.totalVectorCount(), docs.totalHits.relation()), docs.scoreDocs);
   }
 
   private float checkResults(int[][] results, int[][] nn) {
