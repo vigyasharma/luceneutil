@@ -21,6 +21,7 @@ import org.apache.lucene.codecs.Codec;
 import org.apache.lucene.document.*;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.MultiVectorSimilarityFunction;
 import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.store.FSDirectory;
@@ -35,8 +36,8 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static knn.KnnGraphTester.DOCTYPE_CHILD;
-import static knn.KnnGraphTester.DOCTYPE_PARENT;
+import static knn.KnnGraphTester.*;
+import static org.apache.lucene.index.MultiVectorSimilarityFunction.Aggregation.SUM_MAX;
 
 public class KnnIndexer {
   // use smaller ram buffer so we get to merging sooner, making better use of
@@ -82,8 +83,12 @@ public class KnnIndexer {
 
     FieldType fieldType =
         switch (vectorEncoding) {
-          case BYTE -> KnnByteVectorField.createFieldType(dim, similarityFunction);
-          case FLOAT32 -> KnnFloatVectorField.createFieldType(dim, similarityFunction);
+          case BYTE -> (benchmarkType == KnnBenchmarkType.MULTI_VECTOR) ?
+              KnnByteMultiVectorField.createFieldType(dim, new MultiVectorSimilarityFunction(similarityFunction, SUM_MAX)) :
+              KnnByteVectorField.createFieldType(dim, similarityFunction);
+          case FLOAT32 -> (benchmarkType == KnnBenchmarkType.MULTI_VECTOR) ?
+              KnnFloatMultiVectorField.createFieldType(dim, new MultiVectorSimilarityFunction(similarityFunction, SUM_MAX)) :
+              KnnFloatVectorField.createFieldType(dim, similarityFunction);
         };
     if (quiet == false) {
 //      iwc.setInfoStream(new PrintStreamInfoStream(System.out));
@@ -211,12 +216,13 @@ public class KnnIndexer {
       int maxVectorsPerDoc = Integer.MIN_VALUE;
       String prevWikiId = "null";
       String currWikiId;
+      String currParaId;
       List<float[]> floatVectorValues = new ArrayList<>();
       List<byte[]> byteVectorValues = new ArrayList<>();
       do {
         String[] line = br.readLine().trim().split(",");
         currWikiId = line[0];
-        String currParaId = line[1];
+        currParaId = line[1];
         switch (vectorEncoding) {
           case BYTE -> {
             byte[] vector = new byte[dim];
@@ -234,22 +240,22 @@ public class KnnIndexer {
           }
         }
 
-        if (!currWikiId.equals(prevWikiId) && !"null".equals(prevWikiId)) {
+        if (currWikiId.equals(prevWikiId) == false && "null".equals(prevWikiId) == false) {
           Document doc = new Document();
           doc.add(new StoredField(KnnGraphTester.ID_FIELD, docIds++));
           doc.add(new StringField(KnnGraphTester.WIKI_ID_FIELD, currWikiId, Field.Store.YES));
           // TODO: index a multi-vector field
           switch (vectorEncoding) {
             case BYTE -> {
-              doc.add(new KnnByteVectorField(
-                  KnnGraphTester.KNN_FIELD, byteVectorValues.getFirst(), fieldType));
+              doc.add(new KnnByteMultiVectorField(KnnGraphTester.KNN_FIELD, byteVectorValues, fieldType));
+//              doc.add(new KnnByteVectorField(KnnGraphTester.KNN_FIELD, byteVectorValues.getFirst(), fieldType));
               minVectorsPerDoc = Integer.min(minVectorsPerDoc, byteVectorValues.size());
               maxVectorsPerDoc = Integer.max(maxVectorsPerDoc, byteVectorValues.size());
               byteVectorValues.clear();
             }
             case FLOAT32 -> {
-              doc.add(
-                new KnnFloatVectorField(KnnGraphTester.KNN_FIELD, floatVectorValues.getFirst(), fieldType));
+              doc.add(new KnnFloatMultiVectorField(KnnGraphTester.KNN_FIELD, floatVectorValues, fieldType));
+//              doc.add(new KnnFloatVectorField(KnnGraphTester.KNN_FIELD, floatVectorValues.getFirst(), fieldType));
               minVectorsPerDoc = Integer.min(minVectorsPerDoc, floatVectorValues.size());
               maxVectorsPerDoc = Integer.max(maxVectorsPerDoc, floatVectorValues.size());
               floatVectorValues.clear();
@@ -260,6 +266,7 @@ public class KnnIndexer {
           if (docIds % 25_000 == 0) {
             log("\t...documents indexed: %d, vectors indexed: %d, vectors per doc: min=%d, avg=%d, max=%d",
               docIds, vectorsRead, minVectorsPerDoc, vectorsRead / docIds, maxVectorsPerDoc);
+            log("\t... vectors in last doc: %d, last paraId: %s, wikiId: %s", floatVectorValues.size(), currParaId, prevWikiId);
           }
         }
       } while (vectorsRead < numDocs);
@@ -272,15 +279,17 @@ public class KnnIndexer {
         // TODO: index a multi-vector field
         switch (vectorEncoding) {
           case BYTE -> {
-            doc.add(new KnnByteVectorField(
-              KnnGraphTester.KNN_FIELD, byteVectorValues.getFirst(), fieldType));
+            doc.add(new KnnByteMultiVectorField(KnnGraphTester.KNN_FIELD, byteVectorValues, fieldType));
+//            doc.add(new KnnByteVectorField(
+//              KnnGraphTester.KNN_FIELD, byteVectorValues.getFirst(), fieldType));
             minVectorsPerDoc = Integer.min(minVectorsPerDoc, byteVectorValues.size());
             maxVectorsPerDoc = Integer.max(maxVectorsPerDoc, byteVectorValues.size());
             byteVectorValues.clear();
           }
           case FLOAT32 -> {
-            doc.add(
-              new KnnFloatVectorField(KnnGraphTester.KNN_FIELD, floatVectorValues.getFirst(), fieldType));
+            doc.add(new KnnFloatMultiVectorField(KnnGraphTester.KNN_FIELD, floatVectorValues, fieldType));
+//            doc.add(
+//              new KnnFloatVectorField(KnnGraphTester.KNN_FIELD, floatVectorValues.getFirst(), fieldType));
             minVectorsPerDoc = Integer.min(minVectorsPerDoc, floatVectorValues.size());
             maxVectorsPerDoc = Integer.max(maxVectorsPerDoc, floatVectorValues.size());
             floatVectorValues.clear();
@@ -290,6 +299,7 @@ public class KnnIndexer {
       }
       log("Documents indexed: %d, vectors indexed: %d, vectors per doc: min=%d, avg=%d, max=%d",
         docIds, vectorsRead, minVectorsPerDoc, vectorsRead / docIds, maxVectorsPerDoc);
+      log("\t... last chunk done. vectors in last doc: %d, last paraId: %s, wikiId: %s", floatVectorValues.size(), currParaId, prevWikiId);
     }
   }
 

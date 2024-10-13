@@ -47,7 +47,8 @@ import java.util.concurrent.TimeUnit;
 import org.apache.lucene.codecs.Codec;
 import org.apache.lucene.codecs.KnnVectorsFormat;
 import org.apache.lucene.codecs.KnnVectorsReader;
-import org.apache.lucene.codecs.lucene912.Lucene912Codec;
+//import org.apache.lucene.codecs.lucene912.Lucene912Codec;
+import org.apache.lucene.codecs.lucene99.Lucene99Codec;
 import org.apache.lucene.codecs.lucene99.Lucene99HnswScalarQuantizedVectorsFormat;
 import org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat;
 import org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader;
@@ -626,9 +627,9 @@ public class KnnGraphTester {
             } else {
               float[] target = targetReader.next();
               if (prefilter) {
-                doKnnVectorQuery(searcher, KNN_FIELD, target, topK, fanout, bitSetQuery, parentJoin);
+                doKnnVectorQuery(searcher, KNN_FIELD, target, topK, fanout, bitSetQuery, benchmarkType);
               } else {
-                doKnnVectorQuery(searcher, KNN_FIELD, target, (int) (topK / selectivity), fanout, null, parentJoin);
+                doKnnVectorQuery(searcher, KNN_FIELD, target, (int) (topK / selectivity), fanout, null, benchmarkType);
               }
             }
           }
@@ -646,11 +647,11 @@ public class KnnGraphTester {
             } else {
               float[] target = targetReader.next();
               if (prefilter) {
-                results[i] = doKnnVectorQuery(searcher, KNN_FIELD, target, topK, fanout, bitSetQuery, parentJoin);
+                results[i] = doKnnVectorQuery(searcher, KNN_FIELD, target, topK, fanout, bitSetQuery, benchmarkType);
               } else {
                 results[i] =
                   doKnnVectorQuery(
-                    searcher, KNN_FIELD, target, (int) (topK / selectivity), fanout, null, parentJoin);
+                    searcher, KNN_FIELD, target, (int) (topK / selectivity), fanout, null, benchmarkType);
               }
               if (prefilter == false && matchDocs != null) {
                 results[i].scoreDocs =
@@ -667,7 +668,7 @@ public class KnnGraphTester {
           // Fetch, validate and write result document ids.
           StoredFields storedFields = reader.storedFields();
           for (int i = 0; i < numIters; i++) {
-            totalVisited += results[i].totalHits.value();
+            totalVisited += results[i].totalHits.value;
             resultIds[i] = KnnTesterUtils.getResultIds(results[i], storedFields);
           }
           if (quiet == false) {
@@ -741,7 +742,7 @@ public class KnnGraphTester {
     throws IOException {
     ProfiledKnnByteVectorQuery profiledQuery = new ProfiledKnnByteVectorQuery(field, vector, k, fanout, filter);
     TopDocs docs = searcher.search(profiledQuery, k);
-    return new TopDocs(new TotalHits(profiledQuery.totalVectorCount(), docs.totalHits.relation()), docs.scoreDocs);
+    return new TopDocs(new TotalHits(profiledQuery.totalVectorCount(), docs.totalHits.relation), docs.scoreDocs);
   }
 
   private static TopDocs doKnnVectorQuery(
@@ -755,7 +756,7 @@ public class KnnGraphTester {
       default -> {
         ProfiledKnnFloatVectorQuery profiledQuery = new ProfiledKnnFloatVectorQuery(field, vector, k, fanout, filter);
         TopDocs docs = searcher.search(profiledQuery, k);
-        return new TopDocs(new TotalHits(profiledQuery.totalVectorCount(), docs.totalHits.relation()), docs.scoreDocs);
+        return new TopDocs(new TotalHits(profiledQuery.totalVectorCount(), docs.totalHits.relation), docs.scoreDocs);
       }
     }
   }
@@ -792,7 +793,7 @@ public class KnnGraphTester {
    */
   private int[][] getNN(Path docPath, Path queryPath) throws IOException, InterruptedException {
     // look in working directory for cached nn file
-    String hash = Integer.toString(Objects.hash(docPath, queryPath, numDocs, numIters, topK, similarityFunction.ordinal(), parentJoin), 36);
+    String hash = Integer.toString(Objects.hash(docPath, queryPath, numDocs, numIters, topK, similarityFunction.ordinal(), benchmarkType.indexTag), 36);
     String nnFileName = "nn-" + hash + ".bin";
     Path nnPath = Paths.get(nnFileName);
     if (Files.exists(nnPath) && isNewer(nnPath, docPath, queryPath) && selectivity == 1f) {
@@ -930,33 +931,62 @@ public class KnnGraphTester {
       throws IOException, InterruptedException {
     int[][] result = new int[numIters][];
     log("computing true nearest neighbors of " + numIters + " target vectors");
-    log("parentJoin = %s", parentJoin);
-    if (parentJoin) {
-      try (Directory dir = FSDirectory.open(indexPath);
-           DirectoryReader reader = DirectoryReader.open(dir)) {
-        CheckJoinIndex.check(reader, ParentJoinBenchmarkQuery.parentsFilter);
-        List<ComputeExactSearchNNFloatTask> tasks = new ArrayList<>();
+    log("benchmarkType = %s", benchmarkType.name());
+    switch (benchmarkType) {
+      case PARENT_JOIN -> {
+        try (Directory dir = FSDirectory.open(indexPath);
+             DirectoryReader reader = DirectoryReader.open(dir)) {
+          CheckJoinIndex.check(reader, ParentJoinBenchmarkQuery.parentsFilter);
+          List<ComputeExactSearchNNFloatTask> tasks = new ArrayList<>();
+          try (FileChannel qIn = FileChannel.open(queryPath)) {
+            VectorReader queryReader = (VectorReader) VectorReader.create(qIn, dim, VectorEncoding.FLOAT32);
+            for (int i = 0; i < numIters; i++) {
+              float[] query = queryReader.next().clone();
+              tasks.add(new ComputeExactSearchNNFloatTask(i, query, docPath, result, reader));
+            }
+          }
+          ForkJoinPool.commonPool().invokeAll(tasks);
+        }
+      }
+      default -> {
+        // TODO: Use exactSearch here?
+        List<ComputeNNFloatTask> tasks = new ArrayList<>();
         try (FileChannel qIn = FileChannel.open(queryPath)) {
           VectorReader queryReader = (VectorReader) VectorReader.create(qIn, dim, VectorEncoding.FLOAT32);
           for (int i = 0; i < numIters; i++) {
             float[] query = queryReader.next().clone();
-            tasks.add(new ComputeExactSearchNNFloatTask(i, query, docPath, result, reader));
+            tasks.add(new ComputeNNFloatTask(i, query, docPath, result));
           }
         }
         ForkJoinPool.commonPool().invokeAll(tasks);
       }
-    } else {
-      // TODO: Use exactSearch here?
-      List<ComputeNNFloatTask> tasks = new ArrayList<>();
-      try (FileChannel qIn = FileChannel.open(queryPath)) {
-        VectorReader queryReader = (VectorReader) VectorReader.create(qIn, dim, VectorEncoding.FLOAT32);
-        for (int i = 0; i < numIters; i++) {
-          float[] query = queryReader.next().clone();
-          tasks.add(new ComputeNNFloatTask(i, query, docPath, result));
-        }
-      }
-      ForkJoinPool.commonPool().invokeAll(tasks);
     }
+//    if (parentJoin) {
+//      try (Directory dir = FSDirectory.open(indexPath);
+//           DirectoryReader reader = DirectoryReader.open(dir)) {
+//        CheckJoinIndex.check(reader, ParentJoinBenchmarkQuery.parentsFilter);
+//        List<ComputeExactSearchNNFloatTask> tasks = new ArrayList<>();
+//        try (FileChannel qIn = FileChannel.open(queryPath)) {
+//          VectorReader queryReader = (VectorReader) VectorReader.create(qIn, dim, VectorEncoding.FLOAT32);
+//          for (int i = 0; i < numIters; i++) {
+//            float[] query = queryReader.next().clone();
+//            tasks.add(new ComputeExactSearchNNFloatTask(i, query, docPath, result, reader));
+//          }
+//        }
+//        ForkJoinPool.commonPool().invokeAll(tasks);
+//      }
+//    } else {
+//      // TODO: Use exactSearch here?
+//      List<ComputeNNFloatTask> tasks = new ArrayList<>();
+//      try (FileChannel qIn = FileChannel.open(queryPath)) {
+//        VectorReader queryReader = (VectorReader) VectorReader.create(qIn, dim, VectorEncoding.FLOAT32);
+//        for (int i = 0; i < numIters; i++) {
+//          float[] query = queryReader.next().clone();
+//          tasks.add(new ComputeNNFloatTask(i, query, docPath, result));
+//        }
+//      }
+//      ForkJoinPool.commonPool().invokeAll(tasks);
+//    }
     return result;
   }
 
@@ -1044,7 +1074,7 @@ public class KnnGraphTester {
 
   static Codec getCodec(int maxConn, int beamWidth, ExecutorService exec, int numMergeWorker, boolean quantize, int quantizeBits, boolean quantizeCompress) {
     if (exec == null) {
-      return new Lucene912Codec() {
+      return new Lucene99Codec() {
         @Override
         public KnnVectorsFormat getKnnVectorsFormatForField(String field) {
           return quantize ?
@@ -1053,7 +1083,7 @@ public class KnnGraphTester {
         }
       };
     } else {
-      return new Lucene912Codec() {
+      return new Lucene99Codec() {
         @Override
         public KnnVectorsFormat getKnnVectorsFormatForField(String field) {
           return quantize ?
@@ -1091,7 +1121,7 @@ public class KnnGraphTester {
     @Override
     protected TopDocs mergeLeafResults(TopDocs[] perLeafResults) {
       TopDocs td = TopDocs.merge(k, perLeafResults);
-      totalVectorCount = td.totalHits.value();
+      totalVectorCount = td.totalHits.value;
       return td;
     }
 
@@ -1120,7 +1150,7 @@ public class KnnGraphTester {
     @Override
     protected TopDocs mergeLeafResults(TopDocs[] perLeafResults) {
       TopDocs td = TopDocs.merge(k, perLeafResults);
-      totalVectorCount = td.totalHits.value();
+      totalVectorCount = td.totalHits.value;
       return td;
     }
 
