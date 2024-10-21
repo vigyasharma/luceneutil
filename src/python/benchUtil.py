@@ -1675,6 +1675,8 @@ def getAntClassPath(checkout):
   if core_jar_file is None:
     raise RuntimeError('can\'t find core JAR file in %s' % ('%s/lucene/build/core' % path))
 
+  print(f"core jar used = {core_jar_file}")
+
   cp.append(core_jar_file)
   cp.append('%s/lucene/build/sandbox/classes/java' % path)
   cp.append('%s/lucene/build/misc/classes/java' % path)

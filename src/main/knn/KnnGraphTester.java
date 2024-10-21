@@ -49,6 +49,7 @@ import org.apache.lucene.codecs.KnnVectorsFormat;
 import org.apache.lucene.codecs.KnnVectorsReader;
 //import org.apache.lucene.codecs.lucene912.Lucene912Codec;
 import org.apache.lucene.codecs.lucene99.Lucene99Codec;
+import org.apache.lucene.codecs.lucene99.Lucene99HnswMultiVectorsFormat;
 import org.apache.lucene.codecs.lucene99.Lucene99HnswScalarQuantizedVectorsFormat;
 import org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat;
 import org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader;
@@ -361,7 +362,7 @@ public class KnnGraphTester {
             throw new IllegalArgumentException("-multiVector requires a following Path for metadataFile");
           }
           metadataFile = Paths.get(args[++iarg]);
-          benchmarkType = KnnBenchmarkType.PARENT_JOIN;
+          benchmarkType = KnnBenchmarkType.MULTI_VECTOR;
           break;
         default:
           throw new IllegalArgumentException("unknown argument " + arg);
@@ -1125,7 +1126,8 @@ public class KnnGraphTester {
         public KnnVectorsFormat getKnnVectorsFormatForField(String field) {
           return quantize ?
               new Lucene99HnswScalarQuantizedVectorsFormat(maxConn, beamWidth, numMergeWorker, quantizeBits, quantizeCompress, null, null) :
-              new Lucene99HnswVectorsFormat(maxConn, beamWidth, numMergeWorker, null);
+              new Lucene99HnswMultiVectorsFormat(maxConn, beamWidth, numMergeWorker, null);
+//              new Lucene99HnswVectorsFormat(maxConn, beamWidth, numMergeWorker, null);
         }
       };
     } else {
@@ -1134,7 +1136,8 @@ public class KnnGraphTester {
         public KnnVectorsFormat getKnnVectorsFormatForField(String field) {
           return quantize ?
               new Lucene99HnswScalarQuantizedVectorsFormat(maxConn, beamWidth, numMergeWorker, quantizeBits, quantizeCompress, null, exec) :
-              new Lucene99HnswVectorsFormat(maxConn, beamWidth, numMergeWorker, exec);
+              new Lucene99HnswMultiVectorsFormat(maxConn, beamWidth, numMergeWorker, exec);
+//              new Lucene99HnswVectorsFormat(maxConn, beamWidth, numMergeWorker, exec);
         }
       };
     }

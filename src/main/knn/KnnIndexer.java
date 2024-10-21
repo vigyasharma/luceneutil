@@ -18,6 +18,7 @@
 package knn;
 
 import org.apache.lucene.codecs.Codec;
+import org.apache.lucene.codecs.lucene99.Lucene99Codec;
 import org.apache.lucene.document.*;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -110,6 +111,7 @@ public class KnnIndexer {
         log("benchmarkType = %s", benchmarkType);
         switch (benchmarkType) {
           case PARENT_JOIN -> createParentJoinIndex(vectorReader, fieldType, iw);
+          case MULTI_VECTOR -> createMultiVectorIndex(vectorReader, fieldType, iw);
           case DEFAULT -> createDefaultIndex(vectorReader, fieldType, iw);
         }
       }
@@ -204,6 +206,7 @@ public class KnnIndexer {
   }
 
   private void createMultiVectorIndex(VectorReader vectorReader, FieldType fieldType, IndexWriter iw) throws IOException {
+    log("Creating Multi-Vector Index");
     try (BufferedReader br = Files.newBufferedReader(metadataFilePath)) {
       String[] headers = br.readLine().trim().split(",");
       if (headers.length != 2) {
@@ -240,7 +243,7 @@ public class KnnIndexer {
           }
         }
 
-        if (currWikiId.equals(prevWikiId) == false && "null".equals(prevWikiId) == false) {
+        if (!currWikiId.equals(prevWikiId) && !"null".equals(prevWikiId)) {
           Document doc = new Document();
           doc.add(new StoredField(KnnGraphTester.ID_FIELD, docIds++));
           doc.add(new StringField(KnnGraphTester.WIKI_ID_FIELD, currWikiId, Field.Store.YES));
@@ -262,13 +265,13 @@ public class KnnIndexer {
             }
           }
           iw.addDocument(doc);
-          prevWikiId = currWikiId;
           if (docIds % 25_000 == 0) {
             log("\t...documents indexed: %d, vectors indexed: %d, vectors per doc: min=%d, avg=%d, max=%d",
               docIds, vectorsRead, minVectorsPerDoc, vectorsRead / docIds, maxVectorsPerDoc);
             log("\t... vectors in last doc: %d, last paraId: %s, wikiId: %s", floatVectorValues.size(), currParaId, prevWikiId);
           }
         }
+        prevWikiId = currWikiId;
       } while (vectorsRead < numDocs);
 
       // add final chunk of vectors

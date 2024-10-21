@@ -45,8 +45,8 @@ PARAMS = {
     #'ndoc': (10000, 100000, 1000000),
     #'ndoc': (10000, 100000, 200000, 500000),
     #'ndoc': (10000, 100000, 200000, 500000),
-    'ndoc': (1_500_000,),
-    #'ndoc': (100000,),
+    # 'ndoc': (1_500_000,),
+    'ndoc': (100000,),
     #'maxConn': (32, 64, 96),
     #'maxConn': (64, ),
     'maxConn': (32,),
@@ -55,17 +55,18 @@ PARAMS = {
     'beamWidthIndex': (50,),
     #'fanout': (20, 100, 250)
     'fanout': (6,),
-    #'quantize': None,
-    'quantizeBits': (32,),
+    # 'quantize': None,
+    # 'quantizeBits': (32,),
     'numMergeWorker': (12,),
     'numMergeThread': (4,),
     'encoding': ('float32',),
     # 'metric': ('angular',),  # default is angular (dot_product)
     #'quantize': (True,),
-    'quantizeBits': (4,),
+    # 'quantizeBits': (4,),
     #'fanout': (0,),
-    'topK': (10,),
-    'quantizeCompress': (True, False),
+    # 'topK': (10,),
+    'topK': (100,),
+    # 'quantizeCompress': (True, False),
     #'niter': (10,),
 }
 
@@ -107,7 +108,8 @@ def run_knn_benchmark(checkout, values):
     query_vectors = f"{constants.BASE_DIR}/data/{'cohere-wikipedia'}-queries-{dim}d.vec"
     parentJoin_meta_file = f"{constants.BASE_DIR}/data/{'cohere-wikipedia'}-metadata.csv"
     cp = benchUtil.classPathToString(benchUtil.getClassPath(checkout))
-    cmd = constants.JAVA_EXE.split(' ') + ['-cp', cp,
+    jvm_debug = "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
+    cmd = constants.JAVA_EXE.split(' ') + ['-cp', cp, jvm_debug,
            #'--add-modules', 'jdk.incubator.vector',  # no need to add these flags -- they are on by default now?
            #'--enable-native-access=ALL-UNNAMED',
            'knn.KnnGraphTester']
@@ -145,10 +147,11 @@ def run_knn_benchmark(checkout, values):
             '-search-and-stats', query_vectors,
             #'-metric', 'euclidean',
             # '-parentJoin', parentJoin_meta_file,
+            '-multiVector', parentJoin_meta_file,
             # '-numMergeThread', '8', '-numMergeWorker', '8',
             '-forceMerge',
             #'-stats',
-            '-quiet'
+            # '-quiet'
         ]
         print(f'  cmd: {this_cmd}')
         job = subprocess.Popen(this_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='utf-8')
