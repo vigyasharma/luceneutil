@@ -46,7 +46,7 @@ PARAMS = {
     #'ndoc': (10000, 100000, 200000, 500000),
     #'ndoc': (10000, 100000, 200000, 500000),
     # 'ndoc': (1_500_000,),
-    'ndoc': (100000,),
+    'ndoc': (1000,),
     #'maxConn': (32, 64, 96),
     #'maxConn': (64, ),
     'maxConn': (32,),
@@ -64,8 +64,8 @@ PARAMS = {
     #'quantize': (True,),
     # 'quantizeBits': (4,),
     #'fanout': (0,),
-    # 'topK': (10,),
-    'topK': (100,),
+    'topK': (10,),
+    # 'topK': (100,),
     # 'quantizeCompress': (True, False),
     #'niter': (10,),
 }
@@ -108,8 +108,9 @@ def run_knn_benchmark(checkout, values):
     query_vectors = f"{constants.BASE_DIR}/data/{'cohere-wikipedia'}-queries-{dim}d.vec"
     parentJoin_meta_file = f"{constants.BASE_DIR}/data/{'cohere-wikipedia'}-metadata.csv"
     cp = benchUtil.classPathToString(benchUtil.getClassPath(checkout))
-    jvm_debug = "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
-    cmd = constants.JAVA_EXE.split(' ') + ['-cp', cp, jvm_debug,
+    jvm_debug = "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
+    # cmd = constants.JAVA_EXE.split(' ') + ['-cp', cp, '-ea',
+    cmd = constants.JAVA_EXE.split(' ') + ['-cp', cp, jvm_debug, '-ea',
            #'--add-modules', 'jdk.incubator.vector',  # no need to add these flags -- they are on by default now?
            #'--enable-native-access=ALL-UNNAMED',
            'knn.KnnGraphTester']

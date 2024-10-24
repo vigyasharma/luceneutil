@@ -265,7 +265,7 @@ public class KnnIndexer {
             }
           }
           iw.addDocument(doc);
-          if (docIds % 25_000 == 0) {
+          if (docIds % 100 == 0) {
             log("\t...documents indexed: %d, vectors indexed: %d, vectors per doc: min=%d, avg=%d, max=%d",
               docIds, vectorsRead, minVectorsPerDoc, vectorsRead / docIds, maxVectorsPerDoc);
             log("\t... vectors in last doc: %d, last paraId: %s, wikiId: %s", floatVectorValues.size(), currParaId, prevWikiId);

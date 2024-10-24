@@ -150,7 +150,8 @@ public class KnnGraphTester {
   private KnnGraphTester() {
     // set defaults
     numDocs = 1000;
-    numIters = 1000;
+//    numIters = 1000;
+    numIters = 10;
     dim = 256;
     topK = 100;
     numMergeThread = 1;
@@ -618,6 +619,7 @@ public class KnnGraphTester {
           Query bitSetQuery = prefilter ? new BitSetQuery(matchDocs) : null;
           for (int i = 0; i < numIters; i++) {
             // warm up
+            log("warming up.. query number: %d", i);
             if (vectorEncoding.equals(VectorEncoding.BYTE)) {
               byte[] target = targetReaderByte.nextBytes();
               if (prefilter) {
@@ -638,6 +640,7 @@ public class KnnGraphTester {
           start = System.nanoTime();
           cpuTimeStartNs = bean.getCurrentThreadCpuTime();
           for (int i = 0; i < numIters; i++) {
+            log("searching... query number: %d", i);
             if (vectorEncoding.equals(VectorEncoding.BYTE)) {
               byte[] target = targetReaderByte.nextBytes();
               if (prefilter) {
@@ -958,10 +961,13 @@ public class KnnGraphTester {
             VectorReader queryReader = (VectorReader) VectorReader.create(qIn, dim, VectorEncoding.FLOAT32);
             for (int i = 0; i < numIters; i++) {
               float[] query = queryReader.next().clone();
-              tasks.add(new ComputeBaselineNNFloatTask(i, query, docPath, result, reader));
+//              tasks.add(new ComputeBaselineNNFloatTask(i, query, docPath, result, reader));
+              log("\n...running exactSearch for query: %d", i);
+              var job = new ComputeBaselineNNFloatTask(i, query, docPath, result, reader);
+              job.call();
             }
           }
-          ForkJoinPool.commonPool().invokeAll(tasks);
+//          ForkJoinPool.commonPool().invokeAll(tasks);
         }
       }
 //        // TODO: Use exactSearch here?
